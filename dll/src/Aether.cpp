@@ -10,7 +10,7 @@
 BOOL APIENTRY DllMain(HINSTANCE hinstDLL, DWORD fdwReason, [[maybe_unused]] LPVOID lpvReserved) {
     if (fdwReason == DLL_PROCESS_ATTACH) {
         std::thread([=]() {
-            spdlog::default_logger()->sinks().assign( {
+            spdlog::default_logger()->sinks().assign({
                 std::make_shared<spdlog::sinks::msvc_sink_mt>()
             });
 

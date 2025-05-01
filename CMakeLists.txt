@@ -8,6 +8,6 @@ include(cmake/CPM.cmake)
 
 CPMAddPackage("gh:gabime/spdlog@1.15.2")
 
-add_library(Aether SHARED dll/src/Main.cpp)
+add_library(Aether SHARED dll/src/Aether.cpp)
 
 target_link_libraries(Aether PRIVATE spdlog::spdlog)
