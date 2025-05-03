@@ -37,7 +37,7 @@ int main() {
             break;
 
         try {
-            sender.test(std::stoi(line));
+            sender.test(line);
         } catch (std::exception&) {
             // ignore
         }

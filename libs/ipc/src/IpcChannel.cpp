@@ -19,6 +19,7 @@ namespace aether::ipc {
         if (this->in_->requestReset) {
             spdlog::info("Receiver: Got reset request");
             this->reset();
+            didSomething = true;
         }
 
         // If didReset_ is true, we're waiting for the sender to acknowledge by setting `reset` back to false.
@@ -34,19 +35,41 @@ namespace aether::ipc {
         const int sendPtr = this->in_->sendPtr;
         int recvPtr = this->in_->recvPtr;
 
-        if (recvPtr == sendPtr)
-            return didSomething;
+        int bytesReceived = sendPtr - recvPtr;
+        if (bytesReceived < 0)
+            bytesReceived += IPC_BUFFER_SIZE;
 
-        int count = sendPtr - recvPtr;
-        if (count < 0)
-            count += IPC_BUFFER_SIZE;
+        if (bytesReceived != 0) {
+            std::string str;
 
-        spdlog::info("Receiver: Received {} bytes", count);
+            const int bytesBeforeWrap = std::min(IPC_BUFFER_SIZE - recvPtr, bytesReceived);
 
-        recvPtr = sendPtr;
+            str += std::string_view{
+                reinterpret_cast<char*>(this->in_->buffer.data() + recvPtr),
+                static_cast<size_t>(bytesBeforeWrap)
+            };
+            recvPtr += bytesBeforeWrap;
+
+            if (recvPtr == IPC_BUFFER_SIZE)
+                recvPtr = 0;
+
+            if (bytesBeforeWrap < bytesReceived) {
+                const int bytesAfterWrap = bytesReceived - bytesBeforeWrap;
+
+                str += std::string_view{
+                    reinterpret_cast<char*>(this->in_->buffer.data() + recvPtr),
+                    static_cast<size_t>(bytesAfterWrap)
+                };
+                recvPtr += bytesAfterWrap;
+            }
+
+            spdlog::info("Receiver: Received {} bytes: {}", bytesReceived, str);
+
+            didSomething = true;
+        }
 
         this->in_->recvPtr = recvPtr;
-        return true;
+        return didSomething;
     }
 
     void Receiver::reset() {
@@ -75,22 +98,50 @@ namespace aether::ipc {
         int sendPtr = this->out_->sendPtr;
 
         std::lock_guard lk{ this->testMtx_ };
-        if (this->test_ > 0) {
-            // Maximum amount of bytes we can send before having to wait for the Receiver
+
+        while (true) {
+            // Determine how much space the ring buffer has left.
             int space = recvPtr - 1 - sendPtr;
             if (space < 0)
                 space += IPC_BUFFER_SIZE;
 
-            const int bytesToSend = std::min(this->test_, space);
+            if (space == 0)
+                break;
 
-            if (bytesToSend > 0) {
-                //int bytesUntilWrap = IPC_BUFFER_SIZE - 1 - sendPtr + 1;
-                sendPtr = (sendPtr + bytesToSend) % IPC_BUFFER_SIZE;
+            // If we aren't currently serializing a packet, get a packet from the queue
+            if (!this->currentPacket_) {
+                if (this->packets_.empty())
+                    break;
 
-                this->test_ -= bytesToSend;
-                spdlog::info("Sender: Sent {} bytes", bytesToSend);
+                this->currentPacket_ = std::move(this->packets_.front());
+                this->packets_.pop();
+                this->pos = 0;
 
-                didSomething = true;
+                spdlog::info("Sender: Beginning to write a packet with {} bytes", this->currentPacket_->length());
+            }
+
+            std::string& currentPacket = *this->currentPacket_;
+
+            const int bytesToSend = std::min(static_cast<int>(currentPacket.length()) - this->pos, space);
+            const int bytesToWrite = std::min(bytesToSend, IPC_BUFFER_SIZE - sendPtr);
+
+            std::memcpy(
+                    this->out_->buffer.data() + sendPtr,
+                    currentPacket.data() + this->pos,
+                    bytesToWrite);
+            sendPtr += bytesToWrite;
+            this->pos += bytesToWrite;
+            didSomething = true;
+
+            spdlog::info("Sender: Wrote {} bytes", bytesToWrite);
+
+            // Wrap around to 0 if we reach the end of the ring buffer.
+            if (sendPtr == IPC_BUFFER_SIZE) {
+                sendPtr = 0;
+            }
+
+            if (this->pos == currentPacket.length()) {
+                this->currentPacket_ = std::nullopt;
             }
         }
 

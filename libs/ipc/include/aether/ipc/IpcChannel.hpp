@@ -3,6 +3,8 @@
 #include <array>
 #include <atomic>
 #include <mutex>
+#include <optional>
+#include <queue>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -15,7 +17,7 @@ namespace aether::ipc {
 
     static constexpr auto IPC_MAGIC = std::to_array("AetherIPC");
     static constexpr int IPC_VERSION = 0;
-    static constexpr int IPC_BUFFER_SIZE = 2048;
+    static constexpr int IPC_BUFFER_SIZE = 4;
 
     struct IpcData {
         struct Mailbox {
@@ -63,15 +65,19 @@ namespace aether::ipc {
 
         bool update();
 
-        void test(int bytes) {
+        void test(std::string_view str) {
             std::lock_guard _{ this->testMtx_ };
-            this->test_ += bytes;
+            this->packets_.emplace(str);
         }
 
     private:
         IpcData::Mailbox* out_;
 
         std::mutex testMtx_;
-        int test_ = 0;
+
+        std::optional<std::string> currentPacket_;
+        int pos = 0;
+
+        std::queue<std::string> packets_;
     };
 }
