@@ -5,19 +5,29 @@
 #include <mutex>
 #include <optional>
 #include <queue>
+#include <span>
 #include <string>
 #include <string_view>
 #include <vector>
 
 namespace aether::ipc {
+    namespace detail {
+        struct Header {
+            uint8_t type;
+            uint32_t length;
+        };
+
+        static constexpr size_t HEADER_SIZE = 5;
+    }
+
+    static constexpr auto IPC_MAGIC = std::to_array("AetherIPC");
+    static constexpr int IPC_VERSION = 0;
+    static constexpr int IPC_BUFFER_SIZE = 2048;
+
     enum class IpcRole {
         DLL,
         LAUNCHER
     };
-
-    static constexpr auto IPC_MAGIC = std::to_array("AetherIPC");
-    static constexpr int IPC_VERSION = 0;
-    static constexpr int IPC_BUFFER_SIZE = 4;
 
     struct IpcData {
         struct Mailbox {
@@ -38,7 +48,7 @@ namespace aether::ipc {
             // Receiver moves recvPtr up until it equals sendPtr
             int recvPtr;
 
-            std::array<uint8_t, IPC_BUFFER_SIZE> buffer;
+            std::array<std::byte, IPC_BUFFER_SIZE> buffer;
         } dll, launcher;
     };
 
@@ -54,7 +64,13 @@ namespace aether::ipc {
         IpcData::Mailbox* in_;
         bool didReset_ = false;
 
+        std::optional<detail::Header> header_;
+        std::vector<std::byte> headerBuf; // TODO: Make it a boost::static_vector
+        std::vector<std::byte> payloadBuf;
+
         void reset();
+
+        void receiveBytes(std::span<const std::byte> bytes);
     };
 
     class Sender {
@@ -75,8 +91,12 @@ namespace aether::ipc {
 
         std::mutex testMtx_;
 
-        std::optional<std::string> currentPacket_;
-        int pos = 0;
+        struct OutgoingPacket {
+            std::vector<std::byte> data;
+            size_t pos = 0;
+        };
+
+        std::optional<OutgoingPacket> outgoing_;
 
         std::queue<std::string> packets_;
     };
