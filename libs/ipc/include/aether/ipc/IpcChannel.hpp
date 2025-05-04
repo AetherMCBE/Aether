@@ -10,6 +10,8 @@
 #include <string_view>
 #include <vector>
 
+#include <aether/core/Boost.hpp>
+
 namespace aether::ipc {
     namespace detail {
         struct Header {
@@ -65,7 +67,7 @@ namespace aether::ipc {
         bool didReset_ = false;
 
         std::optional<detail::Header> header_;
-        std::vector<std::byte> headerBuf; // TODO: Make it a boost::static_vector
+        core::StaticVector<std::byte, detail::HEADER_SIZE> headerBuf;
         std::vector<std::byte> payloadBuf;
 
         void reset();

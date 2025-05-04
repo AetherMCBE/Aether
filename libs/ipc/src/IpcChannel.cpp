@@ -92,7 +92,7 @@ namespace aether::ipc {
             if (!this->header_) {
                 size_t amount = std::min(detail::HEADER_SIZE - this->headerBuf.size(), bytes.size() - pos);
                 auto subspan = bytes.subspan(pos, amount);
-                this->headerBuf.append_range(subspan);
+                this->headerBuf.insert(this->headerBuf.end(), subspan.begin(), subspan.end());
                 pos += amount;
 
                 if (this->headerBuf.size() == detail::HEADER_SIZE) {
